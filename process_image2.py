@@ -40,19 +40,25 @@ for name, (rx, ry, rw, rh) in boxes.items():
     pil_img = enhancer.enhance(1.2)
     enhanced_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
     
-    # Grayscale and threshold
-    gray = cv2.cvtColor(enhanced_img, cv2.COLOR_BGR2GRAY)
-    _, fg_mask = cv2.threshold(gray, 220, 255, cv2.THRESH_BINARY_INV)
+    # Apply GrabCut for precise foreground extraction
+    mask = np.zeros(enhanced_img.shape[:2], np.uint8)
+    bgdModel = np.zeros((1, 65), np.float64)
+    fgdModel = np.zeros((1, 65), np.float64)
     
-    # Dilate to connect broken parts of the main character
-    kernel = np.ones((11, 11), np.uint8)
-    dilated = cv2.dilate(fg_mask, kernel, iterations=2)
+    # We define a rectangle that leaves a small margin (e.g., 5 pixels)
+    # Everything outside the rectangle is definitely background.
+    # Everything inside is probably foreground.
+    margin = 5
+    rect = (margin, margin, enhanced_img.shape[1] - 2*margin, enhanced_img.shape[0] - 2*margin)
     
-    # Find connected components on the dilated mask
-    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(dilated, connectivity=8)
+    cv2.grabCut(enhanced_img, mask, rect, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_RECT)
     
+    # mask==2 or mask==0 means background. mask==1 or mask==3 means foreground.
+    mask2 = np.where((mask==2)|(mask==0), 0, 1).astype('uint8')
+    
+    # Keep only the largest connected component
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask2, connectivity=8)
     if num_labels > 1:
-        # the background is label 0. The character should be the largest component or closest to center.
         largest_label = 1
         max_area = stats[1, cv2.CC_STAT_AREA]
         for i in range(2, num_labels):
@@ -60,27 +66,18 @@ for name, (rx, ry, rw, rh) in boxes.items():
                 max_area = stats[i, cv2.CC_STAT_AREA]
                 largest_label = i
         
-        # This is the dilated blob of the main character
-        blob_mask = np.zeros_like(fg_mask)
-        blob_mask[labels == largest_label] = 255
-        
-        # Intersect the blob with the exact foreground mask to get tight outlines
-        tight_mask = cv2.bitwise_and(blob_mask, fg_mask)
-        
-        # Find exact contours on the tight mask and fill them (to fill white interior parts of character)
-        contours, _ = cv2.findContours(tight_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        final_mask = np.zeros_like(gray)
-        cv2.drawContours(final_mask, contours, -1, 255, thickness=cv2.FILLED)
-        
-        # Optional: apply a tiny blur or morphological close to smooth the jagged edges
-        # Just a tiny blur to act as anti-aliasing on the alpha channel
-        final_mask = cv2.GaussianBlur(final_mask, (3, 3), 0)
-    else:
-        # If no components found (e.g. all white), just use empty mask
-        final_mask = np.zeros_like(gray)
+        mask2 = np.zeros_like(mask2)
+        mask2[labels == largest_label] = 1
     
-    # Make background transparent
+    # Find contours to fill internal holes (like white eyes or stomach)
+    contours, _ = cv2.findContours(mask2, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    final_mask = np.zeros(enhanced_img.shape[:2], np.uint8)
+    cv2.drawContours(final_mask, contours, -1, 255, thickness=cv2.FILLED)
+    
+    # Smooth the edges
+    final_mask = cv2.GaussianBlur(final_mask, (5, 5), 0)
+    
+    # Merge with original image alpha
     b, g, r = cv2.split(enhanced_img)
     rgba = cv2.merge((b, g, r, final_mask))
     
