@@ -21,7 +21,7 @@ boxes = {
     "wanmi": (0.82, 0.63, 0.18, 0.18),
 }
 
-os.makedirs("characters", exist_ok=True)
+os.makedirs("debug_out", exist_ok=True)
 
 for name, (rx, ry, rw, rh) in boxes.items():
     x = int(rx * w)
@@ -77,7 +77,7 @@ for name, (rx, ry, rw, rh) in boxes.items():
     b, g, r = cv2.split(enhanced_img)
     rgba = cv2.merge((b, g, r, final_mask))
     
-    output_path = f"characters/{name}.png"
+    output_path = f"debug_out/{name}.png"
     cv2.imwrite(output_path, rgba)
     print(f"Saved {output_path}")
 
