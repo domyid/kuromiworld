@@ -47,46 +47,50 @@ for name, (rx, ry, rw, rh) in boxes.items():
     # Adaptive threshold
     fg_mask = cv2.adaptiveThreshold(gray_blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 21, 10)
     
-    # Slight dilation to connect dashed lines, but NOT bridge large gaps
-    kernel = np.ones((3, 3), np.uint8)
-    dilated = cv2.dilate(fg_mask, kernel, iterations=1)
+    # Very slight dilation to connect dashed lines natively
+    kernel_small = np.ones((3, 3), np.uint8)
+    dilated = cv2.dilate(fg_mask, kernel_small, iterations=1)
     
     num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(dilated, connectivity=8)
     
     if num_labels > 1:
-        # Find largest component (excluding bg)
+        # 1. Find largest component (the main body)
         largest_label = 1
         max_area = stats[1, cv2.CC_STAT_AREA]
         for i in range(2, num_labels):
             if stats[i, cv2.CC_STAT_AREA] > max_area:
                 max_area = stats[i, cv2.CC_STAT_AREA]
                 largest_label = i
+                
+        # 2. Create a mask of JUST the main body
+        main_body_mask = np.zeros_like(fg_mask)
+        main_body_mask[labels == largest_label] = 255
+        
+        # 3. Dilate the main body heavily to create a "Zone of Proximity" (e.g. 25 pixels wide)
+        kernel_large = np.ones((11, 11), np.uint8)
+        zone_of_proximity = cv2.dilate(main_body_mask, kernel_large, iterations=3)
         
         valid_labels = [largest_label]
         
-        # Check all other components
+        # 4. For all other components, check if they overlap with the Zone of Proximity
         for i in range(1, num_labels):
             if i == largest_label: continue
             
-            # Bounding box of the component
-            cx, cy, cw, ch, area = stats[i]
-            
-            # Ignore tiny noise dots (e.g., less than 50 pixels)
-            if area < 50:
+            # Ignore tiny noise dots
+            if stats[i, cv2.CC_STAT_AREA] < 50:
                 continue
                 
-            # Check if it touches the boundary
-            touches_left = (cx <= 5)
-            touches_top = (cy <= 5)
-            touches_right = (cx + cw >= crop_w - 5)
-            touches_bottom = (cy + ch >= crop_h - 5)
+            # Create mask for this component
+            comp_mask = np.zeros_like(fg_mask)
+            comp_mask[labels == i] = 255
             
-            touches_boundary = touches_left or touches_top or touches_right or touches_bottom
-            
-            # If it does NOT touch the boundary, we assume it's a detached body part of the character!
-            if not touches_boundary:
+            # Check overlap
+            overlap = cv2.bitwise_and(comp_mask, zone_of_proximity)
+            if cv2.countNonZero(overlap) > 0:
+                # This component is physically close to the main body! Keep it!
                 valid_labels.append(i)
                 
+        # 5. Combine all valid parts into one blob
         blob_mask = np.zeros_like(fg_mask)
         for lbl in valid_labels:
             blob_mask[labels == lbl] = 255
@@ -97,7 +101,7 @@ for name, (rx, ry, rw, rh) in boxes.items():
         cv2.drawContours(final_mask, contours, -1, 255, thickness=cv2.FILLED)
         
         # Erode back the 1-iteration dilation
-        final_mask = cv2.erode(final_mask, kernel, iterations=1)
+        final_mask = cv2.erode(final_mask, kernel_small, iterations=1)
         final_mask = cv2.GaussianBlur(final_mask, (3, 3), 0)
     else:
         final_mask = np.zeros_like(gray)
