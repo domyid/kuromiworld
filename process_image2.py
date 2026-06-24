@@ -2,7 +2,6 @@ import cv2
 import numpy as np
 import os
 from PIL import Image, ImageEnhance
-from rembg import remove
 
 img_path = 'Dipindai_20260624-0934_page-0001.jpg'
 img = cv2.imread(img_path)
@@ -39,12 +38,58 @@ for name, (rx, ry, rw, rh) in boxes.items():
     pil_img = enhancer.enhance(1.5)
     enhancer = ImageEnhance.Color(pil_img)
     pil_img = enhancer.enhance(1.2)
+    enhanced_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
     
-    # Remove background perfectly using AI
-    result = remove(pil_img)
+    gray = cv2.cvtColor(enhanced_img, cv2.COLOR_BGR2GRAY)
+    
+    # Clean paper noise
+    gray_blur = cv2.medianBlur(gray, 5)
+    
+    # Adaptive threshold to isolate ink lines perfectly regardless of shadow
+    fg_mask = cv2.adaptiveThreshold(gray_blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 21, 10)
+    
+    # Dilate heavily to bridge gaps between limbs and body
+    # Using 9x9 kernel, 2 iterations ensures hands and feet connect to the body
+    kernel = np.ones((9, 9), np.uint8)
+    dilated = cv2.dilate(fg_mask, kernel, iterations=2)
+    
+    # Find connected components to isolate the character from other surrounding noise/characters
+    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(dilated, connectivity=8)
+    
+    if num_labels > 1:
+        # Find the largest component (excluding background label 0)
+        largest_label = 1
+        max_area = stats[1, cv2.CC_STAT_AREA]
+        for i in range(2, num_labels):
+            if stats[i, cv2.CC_STAT_AREA] > max_area:
+                max_area = stats[i, cv2.CC_STAT_AREA]
+                largest_label = i
+        
+        blob_mask = np.zeros_like(fg_mask)
+        blob_mask[labels == largest_label] = 255
+        
+        # The blob_mask is currently larger than the character.
+        # We find its external contours and fill it, giving a solid silhouette.
+        contours, _ = cv2.findContours(blob_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        final_mask = np.zeros_like(gray)
+        
+        # Shrink the contour slightly before drawing to avoid a large white aura
+        # We can just draw the contour, then erode the final_mask
+        cv2.drawContours(final_mask, contours, -1, 255, thickness=cv2.FILLED)
+        
+        # Erode to reverse the dilation effect on the boundary
+        final_mask = cv2.erode(final_mask, kernel, iterations=2)
+        
+        # Anti-aliasing
+        final_mask = cv2.GaussianBlur(final_mask, (5, 5), 0)
+    else:
+        final_mask = np.zeros_like(gray)
+        
+    b, g, r = cv2.split(enhanced_img)
+    rgba = cv2.merge((b, g, r, final_mask))
     
     output_path = f"characters/{name}.png"
-    result.save(output_path, "PNG")
+    cv2.imwrite(output_path, rgba)
     print(f"Saved {output_path}")
 
 print("Processing complete.")
