@@ -1,0 +1,187 @@
+body {
+    font-family: 'Nunito', sans-serif;
+    background-color: #fce7f3;
+    overflow: hidden;
+    touch-action: none; /* Prevent pinch zoom */
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* Mode Gelap */
+body.dark-mode #world { filter: brightness(0.4) !important; }
+body.dark-mode { background-color: #1f2937; }
+
+#game-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Layar Utama */
+#world {
+    position: absolute;
+    height: 100%;
+    display: flex;
+    align-items: flex-end;
+    padding-bottom: 150px; /* Space for floor */
+    min-w-[2000px];
+    transition: left 0.1s linear; /* Smooth camera follow */
+    will-change: left;
+}
+
+.room {
+    height: 70%;
+    border: 4px solid;
+    border-bottom: 0;
+    border-top-left-radius: 1.5rem;
+    border-top-right-radius: 1.5rem;
+    position: relative;
+    flex-shrink: 0;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.floor {
+    position: absolute;
+    bottom: 130px;
+    left: -1000px;
+    right: -1000px;
+    height: 20px;
+    background-color: #f9a8d4;
+    border-top: 4px solid #f472b6;
+    z-index: 5;
+}
+
+/* Entitas (Player, NPC) */
+.entity {
+    position: absolute;
+    bottom: 20px; /* Base height above floor */
+    width: 120px;
+    height: 120px;
+    background-size: contain;
+    background-position: center bottom;
+    background-repeat: no-repeat;
+    z-index: 20;
+    transition: transform 0.1s;
+}
+
+.player {
+    filter: drop-shadow(0 10px 8px rgba(0,0,0,0.3));
+    z-index: 30;
+}
+
+/* Animasi Berjalan */
+@keyframes walk {
+    0% { transform: translateY(0) rotate(0deg); }
+    25% { transform: translateY(-10px) rotate(-5deg); }
+    50% { transform: translateY(0) rotate(0deg); }
+    75% { transform: translateY(-10px) rotate(5deg); }
+    100% { transform: translateY(0) rotate(0deg); }
+}
+.walking {
+    animation: walk 0.4s infinite;
+}
+.flip-x {
+    transform: scaleX(-1);
+}
+
+/* Furniture */
+.furniture {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 3rem;
+    z-index: 10;
+}
+
+/* D-Pad Controls */
+#d-pad {
+    position: absolute;
+    bottom: 30px;
+    left: 30px;
+    display: grid;
+    grid-template-columns: 60px 60px 60px;
+    grid-template-rows: 60px 60px 60px;
+    gap: 5px;
+    z-index: 100;
+}
+.d-btn {
+    background: rgba(255, 255, 255, 0.8);
+    border: 4px solid #f472b6;
+    border-radius: 15px;
+    font-size: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    color: #ec4899;
+}
+.d-btn:active {
+    background: #fbcfe8;
+    transform: scale(0.95);
+}
+
+#btn-up { grid-column: 2; grid-row: 1; }
+#btn-left { grid-column: 1; grid-row: 2; }
+#btn-right { grid-column: 3; grid-row: 2; }
+#btn-down { grid-column: 2; grid-row: 3; }
+
+/* Action Button */
+#action-btn {
+    position: absolute;
+    bottom: 50px;
+    right: 50px;
+    width: 100px;
+    height: 100px;
+    background: #f472b6;
+    border: 6px solid #fff;
+    border-radius: 50%;
+    color: white;
+    font-size: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 10px 15px rgba(0,0,0,0.2);
+    z-index: 100;
+    display: none; /* Disembunyikan sampai ada interaksi */
+}
+#action-btn:active {
+    transform: scale(0.9);
+    background: #db2777;
+}
+
+/* UI Balon Chat */
+.chat-bubble {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: white;
+    border: 3px solid #f472b6;
+    padding: 8px 12px;
+    border-radius: 15px;
+    font-weight: bold;
+    font-size: 14px;
+    color: #db2777;
+    white-space: nowrap;
+    margin-bottom: 10px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    z-index: 50;
+}
+.chat-bubble::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-width: 8px 8px 0;
+    border-style: solid;
+    border-color: #f472b6 transparent transparent transparent;
+}
+.chat-bubble.show {
+    opacity: 1;
+}
