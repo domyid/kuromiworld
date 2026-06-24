@@ -42,18 +42,17 @@ for name, (rx, ry, rw, rh) in boxes.items():
     
     # Grayscale and threshold
     gray = cv2.cvtColor(enhanced_img, cv2.COLOR_BGR2GRAY)
-    _, fg_mask = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
+    _, fg_mask = cv2.threshold(gray, 220, 255, cv2.THRESH_BINARY_INV)
     
-    # Dilate to connect broken parts
+    # Dilate to connect broken parts of the main character
     kernel = np.ones((11, 11), np.uint8)
     dilated = cv2.dilate(fg_mask, kernel, iterations=2)
     
-    # Find connected components
+    # Find connected components on the dilated mask
     num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(dilated, connectivity=8)
     
     if num_labels > 1:
         # the background is label 0. The character should be the largest component or closest to center.
-        # Let's find the component with the largest area, ignoring label 0.
         largest_label = 1
         max_area = stats[1, cv2.CC_STAT_AREA]
         for i in range(2, num_labels):
@@ -61,14 +60,22 @@ for name, (rx, ry, rw, rh) in boxes.items():
                 max_area = stats[i, cv2.CC_STAT_AREA]
                 largest_label = i
         
-        # Keep only the largest component
-        character_mask = np.zeros_like(fg_mask)
-        character_mask[labels == largest_label] = 255
+        # This is the dilated blob of the main character
+        blob_mask = np.zeros_like(fg_mask)
+        blob_mask[labels == largest_label] = 255
         
-        # Find contours to fill any holes
-        contours, _ = cv2.findContours(character_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # Intersect the blob with the exact foreground mask to get tight outlines
+        tight_mask = cv2.bitwise_and(blob_mask, fg_mask)
+        
+        # Find exact contours on the tight mask and fill them (to fill white interior parts of character)
+        contours, _ = cv2.findContours(tight_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
         final_mask = np.zeros_like(gray)
         cv2.drawContours(final_mask, contours, -1, 255, thickness=cv2.FILLED)
+        
+        # Optional: apply a tiny blur or morphological close to smooth the jagged edges
+        # Just a tiny blur to act as anti-aliasing on the alpha channel
+        final_mask = cv2.GaussianBlur(final_mask, (3, 3), 0)
     else:
         # If no components found (e.g. all white), just use empty mask
         final_mask = np.zeros_like(gray)
